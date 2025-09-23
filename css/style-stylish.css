@@ -164,7 +164,7 @@ body {
 
 /* Disable native smooth scroll to avoid conflict with GSAP/ScrollSmoother */
 html {
-  scroll-behavior: auto;
+  scroll-behavior: auto !important;
 }
 
 /* -------------------------------------------

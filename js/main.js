@@ -2,11 +2,46 @@
 // Requires: gsap.min.js, ScrollTo.min.js (optional), ScrollSmoother.min.js (optional)
 
 (function () {
+    // Robust, cross-browser scroll helpers
+    function getScrollElement() {
+        return document.scrollingElement || document.documentElement || document.body;
+    }
+    function rafSmoothScrollToY(targetY, duration) {
+        var scrollEl = getScrollElement();
+        var startY = window.pageYOffset || scrollEl.scrollTop || 0;
+        var changeY = targetY - startY;
+        var startTime = null;
+        var ease = function (t) { return 1 - Math.cos((t * Math.PI) / 2); }; // easeOutSine
+        duration = Math.max(0.2, Math.min(duration || 0.8, 1.5)); // Longer max duration for Safari
+        
+        console.log('Safari Debug: rAF scroll', { startY, targetY, changeY, duration });
+        
+        function step(ts) {
+            if (!startTime) startTime = ts;
+            var progress = Math.min(1, (ts - startTime) / (duration * 1000));
+            var eased = ease(progress);
+            var y = startY + changeY * eased;
+            
+            // Use multiple scroll methods for Safari compatibility
+            window.scrollTo(0, y);
+            scrollEl.scrollTop = y;
+            document.documentElement.scrollTop = y;
+            document.body.scrollTop = y;
+            
+            if (progress < 1) {
+                requestAnimationFrame(step);
+            } else {
+                console.log('Safari Debug: rAF scroll completed');
+            }
+        }
+        requestAnimationFrame(step);
+    }
     function getHeaderOffset() {
         var header = document.querySelector('.mil-top-panel-2');
         if (!header) return 0;
-        // Slight extra to avoid clipping under fixed header
-        return (window.innerWidth < 992 ? 90 : 120) + 0;
+        // Use actual header height + small margin so section headings aren't clipped
+        var h = header.offsetHeight || (window.innerWidth < 992 ? 90 : 120);
+        return h + 24;
     }
 
     function setupScrollSmoother() {
@@ -32,52 +67,103 @@
     function smoothScrollTo(targetEl) {
         if (!targetEl) return;
         var offsetY = getHeaderOffset();
-        var smoother = window.__peerfitSmoother;
+        var targetY = targetEl.getBoundingClientRect().top + window.pageYOffset - offsetY;
+
+        // Debug logging for Safari/Chrome
+        console.log('Scroll Debug: smoothScrollTo called', {
+            element: targetEl.id || targetEl.className,
+            offsetY: offsetY,
+            targetY: targetY,
+            hasSmoother: !!(window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get())),
+            hasGSAP: !!(window.gsap && gsap.to)
+        });
+
+        var startY = window.pageYOffset || 0;
+        var smoother = window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get());
+        var attempted = false;
+
+        // Prefer ScrollSmoother if available; use numeric Y to avoid offset signature ambiguity
         if (smoother && typeof smoother.scrollTo === 'function') {
-            smoother.scrollTo(targetEl, true, offsetY);
-            return;
+            try {
+                smoother.scrollTo(targetY, true);
+                attempted = true;
+                console.log('Scroll Debug: ScrollSmoother used');
+            } catch (e) {
+                console.log('Scroll Debug: ScrollSmoother failed', e);
+            }
         }
+
         // Fallback to GSAP ScrollTo if available
-        if (window.gsap && gsap.to) {
-            var targetPosition = targetEl.getBoundingClientRect().top + window.pageYOffset - offsetY;
-            var distance = Math.abs(targetPosition - window.pageYOffset);
+        if (!attempted && window.gsap && gsap.to && window.ScrollToPlugin) {
+            var distance = Math.abs(targetY - (window.pageYOffset || 0));
             var duration = 0.15 + Math.min(0.6, distance / 2500);
             try {
                 gsap.to(window, {
                     duration: duration,
                     ease: 'sine',
-                    scrollTo: { y: targetEl, offsetY: offsetY },
+                    scrollTo: { y: targetY },
                 });
-                return;
+                attempted = true;
+                console.log('Scroll Debug: GSAP ScrollTo used');
             } catch (e) {
-                // If ScrollTo plugin not present, fall back to native
+                console.log('Scroll Debug: GSAP ScrollTo failed', e);
             }
         }
-        // Final fallback
-        window.scrollTo({
-            top: targetEl.getBoundingClientRect().top + window.pageYOffset - offsetY,
-            behavior: 'smooth',
-        });
+
+        // Final fallback or post-verify correction
+        function ensureArrived() {
+            var current = window.pageYOffset || 0;
+            var delta = Math.abs(current - targetY);
+            if (delta > 2) {
+                rafSmoothScrollToY(targetY, 0.6);
+            }
+        }
+        // If nothing attempted, go straight to rAF
+        if (!attempted) {
+            console.log('Scroll Debug: Using rAF fallback');
+            rafSmoothScrollToY(targetY, 0.8);
+        } else {
+            // Verify after animation starts; fix if needed (covers edge cases with smoothers)
+            setTimeout(ensureArrived, 150);
+            setTimeout(ensureArrived, 500);
+        }
     }
 
-    function isHashLink(a) {
-        if (!a || !a.getAttribute) return false;
-        var href = a.getAttribute('href');
-        return href && href.startsWith('#') && href.length > 1 && href !== '#.';
+    function getInPageHash(a) {
+        if (!a || !a.getAttribute) return null;
+        var href = a.getAttribute('href') || '';
+        if (href.startsWith('#') && href.length > 1 && href !== '#.') return href;
+        try {
+            var url = new URL(href, window.location.href);
+            if (url.origin === window.location.origin && url.pathname === window.location.pathname && url.hash && url.hash.length > 1 && url.hash !== '#.') {
+                return url.hash;
+            }
+        } catch (e) {}
+        return null;
     }
 
     function bindAnchorLinks() {
         var anchors = Array.prototype.slice.call(
-            document.querySelectorAll('.mil-onepage-nav a, a.mil-scroll-to, a[href^="#"]')
+            document.querySelectorAll('.mil-onepage-nav a, a.mil-scroll-to, a[href^="#"], a[href*="#"]')
         );
         anchors.forEach(function (a) {
             a.addEventListener('click', function (e) {
-                if (!isHashLink(a)) return;
-                var targetId = a.getAttribute('href');
+                var targetId = getInPageHash(a);
+                if (!targetId) return;
                 var el = document.querySelector(targetId);
                 if (!el) return;
+                console.log('Safari Debug: Anchor click handler', { href: targetId, element: el.id || el.className });
+                // fully take over this click to avoid Swup or other handlers
                 e.preventDefault();
-                smoothScrollTo(el);
+                e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+                // Update URL without causing default jump
+                setUrlHashSilently(targetId);
+                
+                // Safari: Add immediate scroll fallback if smooth scroll doesn't work
+                setTimeout(function() {
+                    smoothScrollTo(el);
+                }, 10);
             });
         });
     }
@@ -94,10 +180,91 @@
         }
     }
 
+    // Safari-specific aggressive anchor handling
+    function safariScrollFix() {
+        // Detect Safari
+        var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        
+        if (isSafari) {
+            console.log('Safari Debug: Applying Safari-specific fixes');
+            
+            // Completely disable ScrollSmoother for Safari and use simple scroll
+            window.__peerfitSmoother = null;
+            
+            // Override smoothScrollTo for Safari with immediate scroll
+            window.__peerfitSmoothScrollTo = function(targetEl) {
+                if (!targetEl) return;
+                console.log('Safari Debug: Direct scroll to', targetEl.id || targetEl.className);
+                
+                var header = document.querySelector('.mil-top-panel-2');
+                var offset = header ? header.offsetHeight + 24 : 120;
+                var targetY = targetEl.getBoundingClientRect().top + window.pageYOffset - offset;
+                
+                // Direct scroll without animation for Safari reliability
+                window.scrollTo(0, targetY);
+            };
+        }
+    }
+
+    // Push/replace hash into URL without native jump
+    function setUrlHashSilently(hash) {
+        if (!hash || hash[0] !== '#') return;
+        try {
+            var url = new URL(window.location.href);
+            if (url.hash === hash) {
+                // ensure the exact URL is set (normalize) without adding history entries
+                window.history.replaceState(window.history.state || {}, '', url.pathname + url.search + hash);
+            } else {
+                window.history.pushState(window.history.state || {}, '', url.pathname + url.search + hash);
+            }
+        } catch (e) {
+            // Fallback: assign hash (may trigger hashchange)
+            window.location.hash = hash;
+        }
+    }
+
     function init() {
+        // Ensure GSAP plugins are registered before any scroll attempts (Safari timing)
+        if (window.gsap) {
+            try { if (window.ScrollToPlugin) gsap.registerPlugin(ScrollToPlugin); } catch (e) {}
+            try { if (window.ScrollSmoother) gsap.registerPlugin(ScrollSmoother); } catch (e) {}
+            try { if (window.ScrollTrigger) gsap.registerPlugin(ScrollTrigger); } catch (e) {}
+        }
         setupScrollSmoother();
         bindAnchorLinks();
         handleInitialHash();
+        safariScrollFix(); // Apply Safari-specific fixes
+        // flag to tell downstream code not to re-bind onepage handlers
+        window.__peerfitAnchorHandler = true;
+    }
+
+    // Expose helpers for external callers (Swup callbacks and global handlers)
+    window.__peerfitSetupScrollSmoother = setupScrollSmoother;
+    window.__peerfitBindAnchorLinks = bindAnchorLinks;
+    window.__peerfitHandleInitialHash = handleInitialHash;
+    window.__peerfitSmoothScrollTo = smoothScrollTo;
+    window.__peerfitGetHeaderOffset = getHeaderOffset;
+    window.__peerfitSetUrlHashSilently = setUrlHashSilently;
+
+    // Bind hashchange once to support back/forward and manual hash edits
+    if (!window.__peerfitHashBound) {
+        window.addEventListener('hashchange', function () {
+            if (location.hash && location.hash.length > 1) {
+                var el = document.querySelector(location.hash);
+                if (el) {
+                    // next tick to allow layout
+                    setTimeout(function(){ smoothScrollTo(el); }, 0);
+                }
+            }
+        });
+        // Also respond to history navigation when using pushState for hashes
+        window.addEventListener('popstate', function(){
+            if (location.hash && location.hash.length > 1) {
+                var el = document.querySelector(location.hash);
+                if (el) setTimeout(function(){ smoothScrollTo(el); }, 0);
+            }
+        });
+        window.__peerfitHashBound = true;
     }
 
     if (document.readyState === 'loading') {
@@ -130,6 +297,22 @@ document.addEventListener("DOMContentLoaded", function () {
     const swup = new Swup({
         containers: ['#swup', '#swupMenu', '#swup-opm'],
         animateHistoryBrowsing: true,
+        // Do not handle pure in-page anchors; we manage those
+        ignoreVisit: function(url, ctx){
+            try {
+                const full = new URL(url, window.location.href);
+                // same page and has hash only
+                const samePath = full.pathname === window.location.pathname && full.search === window.location.search;
+                return samePath && !!full.hash && full.hash.length > 1;
+            } catch (e) { return false; }
+        }
+    });
+
+    // Re-bind smooth scrolling after Swup swaps content
+    swup.on && swup.on('contentReplaced', () => {
+        if (window.__peerfitSetupScrollSmoother) window.__peerfitSetupScrollSmoother();
+        if (window.__peerfitBindAnchorLinks) window.__peerfitBindAnchorLinks();
+        if (window.__peerfitHandleInitialHash) window.__peerfitHandleInitialHash();
     });
 
     /* -------------------------------------------
@@ -137,17 +320,21 @@ document.addEventListener("DOMContentLoaded", function () {
     register gsap plugins
 
     ------------------------------------------- */
-    gsap.registerPlugin(ScrollTrigger, ScrollSmoother, ScrollToPlugin);
+    if (window.gsap) {
+        try {
+            var __plugins = [];
+            if (window.ScrollTrigger) __plugins.push(window.ScrollTrigger);
+            if (window.ScrollSmoother) __plugins.push(window.ScrollSmoother);
+            if (window.ScrollToPlugin) __plugins.push(window.ScrollToPlugin);
+            if (__plugins.length) gsap.registerPlugin.apply(gsap, __plugins);
+        } catch (e) { /* noop */ }
+    }
     /* -------------------------------------------
 
     ScrollSmoother
 
     ------------------------------------------- */
-    ScrollSmoother.create({
-        smooth: 1,
-        effects: true,
-        smoothTouch: 0.1,
-    });
+    if (window.__peerfitSetupScrollSmoother) window.__peerfitSetupScrollSmoother();
 
     /* -------------------------------------------
 
@@ -283,6 +470,10 @@ document.addEventListener("DOMContentLoaded", function () {
     menu
 
     ------------------------------------------- */
+    // Safe helpers to avoid null.classList errors
+    function safeToggle(el, cls) { if (el && el.classList) el.classList.toggle(cls); }
+    function safeRemove(el, cls) { if (el && el.classList) el.classList.remove(cls); }
+
     document.addEventListener('click', function (event) {
         const menuBtn = event.target.closest('.mil-menu-btn');
         const menuFrame = document.querySelector('.mil-menu-frame');
@@ -290,15 +481,18 @@ document.addEventListener("DOMContentLoaded", function () {
         const tp2 = document.querySelector('.mil-top-panel-2');
 
         if (menuBtn) {
-            menuBtn.classList.toggle('mil-active');
-            menuFrame.classList.toggle('mil-active');
-            btnFrame.classList.toggle('mil-active');
-            tp2.classList.toggle('mil-menu-open');
+            // Toggle only when elements exist
+            safeToggle(menuBtn, 'mil-active');
+            safeToggle(menuFrame, 'mil-active');
+            safeToggle(btnFrame, 'mil-active');
+            safeToggle(tp2, 'mil-menu-open');
         } else if (event.target.closest('.mil-menu-frame') && !event.target.closest('.mil-menu-frame > *')) {
-            menuFrame.classList.remove('mil-active');
-            btnFrame.classList.remove('mil-active');
-            document.querySelector('.mil-menu-btn').classList.remove('mil-active');
-            tp2.classList.remove('mil-menu-open');
+            // Clicked on the overlay area of the menu; close if present
+            safeRemove(menuFrame, 'mil-active');
+            safeRemove(btnFrame, 'mil-active');
+            const menuBtnEl = document.querySelector('.mil-menu-btn');
+            safeRemove(menuBtnEl, 'mil-active');
+            safeRemove(tp2, 'mil-menu-open');
         }
     });
 
@@ -307,10 +501,15 @@ document.addEventListener("DOMContentLoaded", function () {
             const href = this.getAttribute('href');
 
             if (isValidHref(href)) {
-                document.querySelector('.mil-menu-btn').classList.remove('mil-active');
-                document.querySelector('.mil-menu-frame').classList.remove('mil-active');
-                document.querySelector('.mil-buttons-tp-frame').classList.remove('mil-active');
-                document.querySelector('.mil-top-panel-2').classList.remove('mil-menu-open');
+                const menuBtn = document.querySelector('.mil-menu-btn');
+                const menuFrame = document.querySelector('.mil-menu-frame');
+                const btnFrame = document.querySelector('.mil-buttons-tp-frame');
+                const tp2 = document.querySelector('.mil-top-panel-2');
+                
+                if (menuBtn && menuBtn.classList) menuBtn.classList.remove('mil-active');
+                if (menuFrame && menuFrame.classList) menuFrame.classList.remove('mil-active');
+                if (btnFrame && btnFrame.classList) btnFrame.classList.remove('mil-active');
+                if (tp2 && tp2.classList) tp2.classList.remove('mil-menu-open');
             } else {
                 event.preventDefault();
             }
@@ -350,14 +549,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const menuFrame = document.querySelector('.mil-menu-frame-2');
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
 
-        if (menuFrame.classList.contains('mil-active')) {
+        if (menuFrame && menuFrame.classList && menuFrame.classList.contains('mil-active')) {
             return; // Stop execution if .mil-active class is present
         }
 
-        if (scrollTop > lastScrollTop) {
-            topPanel.classList.add('mil-scroll');
-        } else if (scrollTop < lastScrollTop && scrollTop === 0) {
-            topPanel.classList.remove('mil-scroll');
+        if (topPanel) {
+            if (scrollTop > lastScrollTop) {
+                topPanel.classList.add('mil-scroll');
+            } else if (scrollTop < lastScrollTop && scrollTop === 0) {
+                topPanel.classList.remove('mil-scroll');
+            }
         }
 
         lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
@@ -369,30 +570,36 @@ document.addEventListener("DOMContentLoaded", function () {
     onepage navigation
 
     ------------------------------------------- */
-    document.querySelectorAll('.mil-onepage-nav a, .mil-scroll-to').forEach(link => {
-        link.addEventListener('click', function (event) {
-            event.preventDefault();
-            const targetId = this.getAttribute('href');
-            const targetElement = document.querySelector(targetId);
-            if (!targetElement) return;
-            const offsetY = window.innerWidth < 992 ? 120 : 160;
-            const smoother = ScrollSmoother.get && ScrollSmoother.get();
-            if (smoother) {
-                smoother.scrollTo(targetElement, true, offsetY);
-            } else {
-                const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset;
-                const currentPosition = window.pageYOffset;
-                const distance = Math.abs(targetPosition - currentPosition);
-                const baseDuration = 0.1;
-                const duration = baseDuration + (distance / 4000);
-                gsap.to(window, {
-                    duration: duration,
-                    ease: 'sine',
-                    scrollTo: { y: targetElement, offsetY }
-                });
-            }
+    if (!window.__peerfitAnchorHandler) {
+        document.querySelectorAll('.mil-onepage-nav a, .mil-scroll-to').forEach(link => {
+            link.addEventListener('click', function (event) {
+                event.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                if (!targetElement) return;
+                const offsetY = (function(){
+                    var header = document.querySelector('.mil-top-panel-2');
+                    var h = header ? (header.offsetHeight || 0) : 0;
+                    return (h || (window.innerWidth < 992 ? 90 : 120)) + 24;
+                })();
+                const smoother = ScrollSmoother.get && ScrollSmoother.get();
+                if (smoother) {
+                    smoother.scrollTo(targetElement, true, offsetY);
+                } else {
+                    const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset;
+                    const currentPosition = window.pageYOffset;
+                    const distance = Math.abs(targetPosition - currentPosition);
+                    const baseDuration = 0.1;
+                    const duration = baseDuration + (distance / 4000);
+                    gsap.to(window, {
+                        duration: duration,
+                        ease: 'sine',
+                        scrollTo: { y: targetElement, offsetY }
+                    });
+                }
+            });
         });
-    });
+    }
 
     /* -------------------------------------------
 
@@ -462,6 +669,32 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
     });
+
+    // Capture-phase safety net: intercept any in-page hash link before others
+    document.addEventListener('click', function (e) {
+        const a = e.target && e.target.closest && e.target.closest('a');
+        if (!a) return;
+        const href = a.getAttribute('href') || '';
+        if (href.startsWith('#') && href.length > 1 && href !== '#.') {
+            const el = document.querySelector(href);
+            if (!el) return;
+            console.log('Safari Debug: Global click handler triggered for', href);
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+            if (window.__peerfitSetUrlHashSilently) window.__peerfitSetUrlHashSilently(href);
+            if (window.__peerfitSmoothScrollTo) {
+                window.__peerfitSmoothScrollTo(el);
+            } else {
+                // Absolute last resort: instant jump with manual offset
+                var header = document.querySelector('.mil-top-panel-2');
+                var h = header ? (header.offsetHeight || 0) : 0;
+                var oy = (h || (window.innerWidth < 992 ? 90 : 120)) + 24;
+                console.log('Safari Debug: Using absolute fallback scroll');
+                window.scrollTo(0, el.getBoundingClientRect().top + window.pageYOffset - oy);
+            }
+        }
+    }, true);
 
     /* -------------------------------------------
 
@@ -748,17 +981,23 @@ document.addEventListener("DOMContentLoaded", function () {
         register gsap plugins
 
         ------------------------------------------- */
-        gsap.registerPlugin(ScrollTrigger, ScrollSmoother, ScrollToPlugin);
+        if (window.gsap) {
+            try {
+                var __plugins2 = [];
+                if (window.ScrollTrigger) __plugins2.push(window.ScrollTrigger);
+                if (window.ScrollSmoother) __plugins2.push(window.ScrollSmoother);
+                if (window.ScrollToPlugin) __plugins2.push(window.ScrollToPlugin);
+                if (__plugins2.length) gsap.registerPlugin.apply(gsap, __plugins2);
+            } catch (e) { /* noop */ }
+        }
         /* -------------------------------------------
 
         ScrollSmoother
 
         ------------------------------------------- */
-        ScrollSmoother.create({
-            smooth: 1,
-            effects: true,
-            smoothTouch: 0.1,
-        });
+        if (window.__peerfitSetupScrollSmoother) {
+            window.__peerfitSetupScrollSmoother();
+        }
 
         /* -------------------------------------------
 
@@ -826,10 +1065,15 @@ document.addEventListener("DOMContentLoaded", function () {
                 const href = this.getAttribute('href');
 
                 if (isValidHref(href)) {
-                    document.querySelector('.mil-menu-btn').classList.remove('mil-active');
-                    document.querySelector('.mil-menu-frame').classList.remove('mil-active');
-                    document.querySelector('.mil-buttons-tp-frame').classList.remove('mil-active');
-                    document.querySelector('.mil-top-panel-2').classList.remove('mil-menu-open');
+                    const menuBtn = document.querySelector('.mil-menu-btn');
+                    const menuFrame = document.querySelector('.mil-menu-frame');
+                    const btnFrame = document.querySelector('.mil-buttons-tp-frame');
+                    const tp2 = document.querySelector('.mil-top-panel-2');
+                    
+                    if (menuBtn && menuBtn.classList) menuBtn.classList.remove('mil-active');
+                    if (menuFrame && menuFrame.classList) menuFrame.classList.remove('mil-active');
+                    if (btnFrame && btnFrame.classList) btnFrame.classList.remove('mil-active');
+                    if (tp2 && tp2.classList) tp2.classList.remove('mil-menu-open');
                 } else {
                     event.preventDefault(); // Якщо href невалідний, зупиняємо дію за замовчуванням
                 }
@@ -868,26 +1112,14 @@ document.addEventListener("DOMContentLoaded", function () {
         ------------------------------------------- */
         document.querySelectorAll('.mil-onepage-nav > li > a, .mil-scroll-to').forEach(link => {
             link.addEventListener('click', function (event) {
+                const href = this.getAttribute('href') || '';
+                if (!href.startsWith('#') || href.length <= 1 || href === '#.') return; // let normal links work
                 event.preventDefault();
-                const targetId = this.getAttribute('href');
-                const targetElement = document.querySelector(targetId);
+                const targetElement = document.querySelector(href);
                 if (!targetElement) return;
-
-                const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset;
-                const currentPosition = window.pageYOffset;
-                const distance = Math.abs(targetPosition - currentPosition);
-                const baseDuration = 0.1; // Base duration in seconds
-                const duration = baseDuration + (distance / 4000); // Adjust this factor as needed
-
-                const offsetY = window.innerWidth < 992 ? 120 : 160;
-                gsap.to(window, {
-                    duration: duration,
-                    ease: 'sine',
-                    scrollTo: {
-                        y: targetElement,
-                        offsetY: offsetY
-                    }
-                });
+                if (window.__peerfitSmoothScrollTo) {
+                    window.__peerfitSmoothScrollTo(targetElement);
+                }
             });
         });
 
