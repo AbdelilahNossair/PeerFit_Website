@@ -2,6 +2,14 @@
 // Requires: gsap.min.js, ScrollTo.min.js (optional), ScrollSmoother.min.js (optional)
 
 (function () {
+    // Force simple-scroll mode (Safari-style) across all browsers
+    var FORCE_SIMPLE_SCROLL = true;
+    if (FORCE_SIMPLE_SCROLL) {
+        try { 
+            document.documentElement.classList.add('mil-simple-scroll'); 
+        } catch (e) {}
+    }
+    window.__peerfitDisableSmoother = true;
     // Robust, cross-browser scroll helpers
     function getScrollElement() {
         return document.scrollingElement || document.documentElement || document.body;
@@ -45,6 +53,11 @@
     }
 
     function setupScrollSmoother() {
+        // Honor global disable flag
+        if (FORCE_SIMPLE_SCROLL || window.__peerfitDisableSmoother) {
+            window.__peerfitSmoother = null;
+            return null;
+        }
         if (window.ScrollSmoother && typeof window.ScrollSmoother.create === 'function') {
             try {
                 // Create once
@@ -66,6 +79,12 @@
 
     function smoothScrollTo(targetEl) {
         if (!targetEl) return;
+        if (FORCE_SIMPLE_SCROLL || window.__peerfitDisableSmoother) {
+            var simpleOffset = getHeaderOffset();
+            var simpleTargetY = targetEl.getBoundingClientRect().top + window.pageYOffset - simpleOffset;
+            window.scrollTo(0, simpleTargetY);
+            return;
+        }
         var offsetY = getHeaderOffset();
         var targetY = targetEl.getBoundingClientRect().top + window.pageYOffset - offsetY;
 
@@ -169,41 +188,48 @@
     }
 
     function handleInitialHash() {
-        if (location.hash && location.hash.length > 1) {
-            var el = document.querySelector(location.hash);
-            if (el) {
-                // Delay until layout ready
-                setTimeout(function () {
-                    smoothScrollTo(el);
-                }, 50);
-            }
+        if (location.hash && location.hash.length > 1 && location.hash !== '#.') {
+            try {
+                var el = document.querySelector(location.hash);
+                if (el) {
+                    // Delay until layout ready
+                    setTimeout(function () { smoothScrollTo(el); }, 50);
+                }
+            } catch (e) { /* ignore invalid selector */ }
         }
     }
 
-    // Safari-specific aggressive anchor handling
-    function safariScrollFix() {
-        // Detect Safari
-        var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    // Simple-scroll mode: disable smoother and use direct scroll with header offset for all
+    function enableSimpleScrollForAll() {
+        if (!(FORCE_SIMPLE_SCROLL || window.__peerfitDisableSmoother)) return;
+        // Completely disable ScrollSmoother and use simple scroll
+        window.__peerfitSmoother = null;
         
-        if (isSafari) {
-            console.log('Safari Debug: Applying Safari-specific fixes');
-            
-            // Completely disable ScrollSmoother for Safari and use simple scroll
-            window.__peerfitSmoother = null;
-            
-            // Override smoothScrollTo for Safari with immediate scroll
-            window.__peerfitSmoothScrollTo = function(targetEl) {
-                if (!targetEl) return;
-                console.log('Safari Debug: Direct scroll to', targetEl.id || targetEl.className);
-                
-                var header = document.querySelector('.mil-top-panel-2');
-                var offset = header ? header.offsetHeight + 24 : 120;
-                var targetY = targetEl.getBoundingClientRect().top + window.pageYOffset - offset;
-                
-                // Direct scroll without animation for Safari reliability
-                window.scrollTo(0, targetY);
-            };
-        }
+        // Force refresh layout after CSS changes
+        setTimeout(function() {
+            var wrapper = document.querySelector('.mil-page-wrapper');
+            var content = document.querySelector('#smooth-content');
+            if (wrapper) {
+                wrapper.style.height = 'auto';
+                wrapper.style.overflow = 'visible';
+            }
+            if (content) {
+                content.style.height = 'auto';
+            }
+            // Force reflow
+            if (document.body) {
+                document.body.offsetHeight;
+            }
+        }, 100);
+        
+        // Override smoothScrollTo with immediate scroll
+        window.__peerfitSmoothScrollTo = function(targetEl) {
+            if (!targetEl) return;
+            var header = document.querySelector('.mil-top-panel-2');
+            var offset = header ? header.offsetHeight + 24 : 120;
+            var targetY = targetEl.getBoundingClientRect().top + window.pageYOffset - offset;
+            window.scrollTo(0, targetY);
+        };
     }
 
     // Push/replace hash into URL without native jump
@@ -233,7 +259,11 @@
         setupScrollSmoother();
         bindAnchorLinks();
         handleInitialHash();
-        safariScrollFix(); // Apply Safari-specific fixes
+        enableSimpleScrollForAll(); // Apply simple scroll mode across all browsers
+        
+        // Ensure page starts at top
+        window.scrollTo(0, 0);
+        
         // flag to tell downstream code not to re-bind onepage handlers
         window.__peerfitAnchorHandler = true;
     }
@@ -249,19 +279,20 @@
     // Bind hashchange once to support back/forward and manual hash edits
     if (!window.__peerfitHashBound) {
         window.addEventListener('hashchange', function () {
-            if (location.hash && location.hash.length > 1) {
-                var el = document.querySelector(location.hash);
-                if (el) {
-                    // next tick to allow layout
-                    setTimeout(function(){ smoothScrollTo(el); }, 0);
-                }
+            if (location.hash && location.hash.length > 1 && location.hash !== '#.') {
+                try {
+                    var el = document.querySelector(location.hash);
+                    if (el) setTimeout(function(){ smoothScrollTo(el); }, 0);
+                } catch (e) { /* ignore invalid selector */ }
             }
         });
         // Also respond to history navigation when using pushState for hashes
         window.addEventListener('popstate', function(){
-            if (location.hash && location.hash.length > 1) {
-                var el = document.querySelector(location.hash);
-                if (el) setTimeout(function(){ smoothScrollTo(el); }, 0);
+            if (location.hash && location.hash.length > 1 && location.hash !== '#.') {
+                try {
+                    var el = document.querySelector(location.hash);
+                    if (el) setTimeout(function(){ smoothScrollTo(el); }, 0);
+                } catch (e) { /* ignore invalid selector */ }
             }
         });
         window.__peerfitHashBound = true;
@@ -966,6 +997,151 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
+    /* -------------------------------------------
+
+    Android beta modal
+
+    ------------------------------------------- */
+    function setupAndroidModalHandlers() {
+        // Prevent duplicate bindings across Swup transitions
+        if (window.__peerfitAndroidModalHandlersBound) {
+            return;
+        }
+        window.__peerfitAndroidModalHandlersBound = true;
+        
+        var modal = document.getElementById('android-beta-modal');
+        if (!modal) {
+            return;
+        }
+        
+        // ensure modal starts hidden for both visuals and a11y
+        modal.classList.remove('mil-active');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.setAttribute('hidden', '');
+        
+        var openers = document.querySelectorAll('.mil-open-android-modal');
+        
+        var closeBtn = modal.querySelector('.mil-modal-close');
+        var backdrop = modal.querySelector('.mil-modal-backdrop');
+        var form = modal.querySelector('#android-beta-form');
+        var statusEl = modal.querySelector('#beta-status');
+        // main app content to inert when modal is open
+        var appRoot = document.getElementById('swup') || document.getElementById('smooth-wrapper') || document.body;
+
+        function openModal(e) {
+            if (e) { 
+                e.preventDefault(); 
+                e.stopPropagation(); 
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+            }
+            
+            // In case there are duplicate IDs due to partials, operate on all
+            var allModals = Array.prototype.slice.call(document.querySelectorAll('#android-beta-modal'));
+            if (!allModals.length) allModals = [modal];
+            allModals.forEach(function(m){
+                m.classList.add('mil-active');
+                m.setAttribute('aria-hidden', 'false');
+                m.removeAttribute('hidden');
+                // Rely on CSS for display/position/backdrop
+            });
+            
+            // lock page scroll
+            document.body.classList.add('mil-modal-open');
+            // make background inert to prevent focus/AT issues
+            try { if (appRoot && appRoot !== modal && appRoot.setAttribute) appRoot.setAttribute('inert', ''); } catch (err) {}
+            // pause smoother if available
+            try {
+                var smoother = window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get());
+                if (smoother && smoother.paused) smoother.paused(true);
+            } catch (err) {}
+            var nameInput = modal.querySelector('#beta-name');
+            if (nameInput) nameInput.focus();
+        }
+        function closeModal() {
+            // move focus away from inside the modal to avoid aria-hidden focus warning
+            try {
+                var active = document.activeElement;
+                if (active && modal.contains(active)) active.blur();
+            } catch (err) {}
+            var allModals = Array.prototype.slice.call(document.querySelectorAll('#android-beta-modal'));
+            if (!allModals.length) allModals = [modal];
+            allModals.forEach(function(m){
+                m.classList.remove('mil-active');
+                m.setAttribute('aria-hidden', 'true');
+                m.setAttribute('hidden', '');
+                // Cleanup inline overrides
+                m.style.removeProperty('display');
+                m.style.removeProperty('position');
+                m.style.removeProperty('inset');
+                m.style.removeProperty('z-index');
+                m.style.removeProperty('visibility');
+                var backdropEl = m.querySelector('.mil-modal-backdrop');
+                var winEl = m.querySelector('.mil-modal-window');
+                if (backdropEl) { backdropEl.style.removeProperty('display'); backdropEl.style.removeProperty('pointer-events'); }
+                if (winEl) { winEl.style.removeProperty('display'); winEl.style.removeProperty('opacity'); }
+            });
+            // unlock page scroll
+            document.body.classList.remove('mil-modal-open');
+            // restore background interactivity
+            try { if (appRoot && appRoot !== modal && appRoot.removeAttribute) appRoot.removeAttribute('inert'); } catch (err) {}
+            // resume smoother if available
+            try {
+                var smoother = window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get());
+                if (smoother && smoother.paused) smoother.paused(false);
+            } catch (err) {}
+        }
+
+        openers.forEach(function(btn){ 
+            btn.addEventListener('click', openModal); 
+        });
+        if (closeBtn) closeBtn.addEventListener('click', closeModal);
+        if (backdrop) backdrop.addEventListener('click', closeModal);
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                var nameEl = form.querySelector('#beta-name');
+                var emailEl = form.querySelector('#beta-email');
+                var consentEl = form.querySelector('#beta-consent');
+                var name = (nameEl ? nameEl.value : '').trim();
+                var email = (emailEl ? emailEl.value : '').trim();
+                var consent = !!(consentEl && consentEl.checked);
+                if (!name || !email || !consent) {
+                    if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Please fill out all fields and accept the consent.'; }
+                    return;
+                }
+                var submitBtn = form.querySelector('#beta-submit');
+                if (submitBtn) submitBtn.disabled = true;
+                if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Submitting…'; }
+                // Simulate async send. Replace with your endpoint later.
+                setTimeout(function(){
+                    if (statusEl) { statusEl.textContent = 'Thanks! You\'ll receive an email with the download link shortly.'; }
+                    setTimeout(closeModal, 900);
+                    form.reset();
+                    if (submitBtn) submitBtn.disabled = false;
+                }, 900);
+            });
+        }
+
+        // Capture-phase delegation to guarantee modal opens even if other handlers exist
+        document.addEventListener('click', function(evt){
+            var el = evt.target;
+            while (el && el !== document) {
+                if (el.classList && el.classList.contains('mil-open-android-modal')) {
+                    evt.preventDefault();
+                    if (typeof evt.stopImmediatePropagation === 'function') evt.stopImmediatePropagation();
+                    evt.stopPropagation();
+                    openModal(evt);
+                    return;
+                }
+                el = el.parentNode;
+            }
+        }, true);
+    }
+
+    setupAndroidModalHandlers();
+
     /* ----------------------------------------------------------------------------
     -------------------------------------------------------------------------------
 
@@ -1448,6 +1624,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
         });
+
+        setupAndroidModalHandlers();
+
+        // Rebind global modal handlers (idempotent due to guard)
+        if (typeof setupAndroidModalHandlers === 'function') {
+            setupAndroidModalHandlers();
+        }
     });
 
 });

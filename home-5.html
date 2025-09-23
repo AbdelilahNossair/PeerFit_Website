@@ -13,10 +13,9 @@
     <link rel="stylesheet" href="css/plugins/fontawesome.min.css">
     <!-- swiper css -->
     <link rel="stylesheet" href="css/plugins/swiper.min.css">
-    <!-- okai css -->
-    <link rel="stylesheet" href="css/style-stylish.css">
-    <!-- preload local brand font for faster paint on all browsers -->
-    <link rel="preload" href="fonts/Futura%20Condensed%20Extra%20Bold.otf" as="font" type="font/otf" crossorigin>
+    <!-- okai css (cache-busted) -->
+    <link rel="stylesheet" href="css/style-stylish.css?v=20250923-2">
+    <!-- Removed font preload to avoid "preloaded but not used" warnings; CSS @font-face will load it with font-display: swap -->
     <!-- page title -->
     <title>PeerFit – Find Your Next Workout Crew</title>
 
@@ -475,8 +474,8 @@ reviews end -->
                             <div class="col-lg-6">
                                 <div class="mil-button-pad mil-a2">
                                     <span class="mil-up">
-                                        <a href="#download" class="mil-btn mil-btn-border mil-m1 mil-gap mil-c-gone mil-scroll-to" data-no-swup>Download for iOS</a>
-                                        <a href="#download" class="mil-btn mil-btn-border mil-m1 mil-c-gone mil-scroll-to" data-no-swup>Download for Android</a>
+                                        <!--<a href="#download" class="mil-btn mil-btn-border mil-m1 mil-gap mil-c-gone mil-scroll-to" data-no-swup>Download for iOS</a>-->
+                                        <a href="#." class="mil-btn mil-btn-border mil-m1 mil-open-android-modal" data-no-swup>Download for Android</a>
                                     </span>
                                 </div>
                             </div>
@@ -530,6 +529,7 @@ reviews end -->
 
                         </div>
                     </footer>
+
                     <!-- footer end -->
 
                 </div>
@@ -541,6 +541,47 @@ reviews end -->
 
     </div>
     <!-- wrapper end -->
+
+    <!-- Android Beta Modal (outside wrappers for proper fixed behavior) -->
+    <div class="mil-modal" id="android-beta-modal" aria-hidden="true" role="dialog" aria-modal="true" hidden>
+        <div class="mil-modal-backdrop mil-c-gone"></div>
+        <div class="mil-modal-window mil-up" role="document">
+            <button class="mil-modal-close mil-c-gone" aria-label="Close">
+                <i class="fal fa-times"></i>
+            </button>
+            <div class="mil-modal-body">
+                <p class="mil-stylized mil-m2 mil-mb30">Android Beta</p>
+                <h3 class="mil-head2 mil-mb20">Become a tester</h3>
+                <p class="mil-text-md mil-deco-text mil-mb40">Enter your name and email to join the closed beta. You’ll receive an email with the download link and instructions. By joining, you agree to provide feedback and understand this is a test build.</p>
+                <form id="android-beta-form" class="mil-form">
+                    <div class="mil-form-row">
+                        <div class="mil-form-field">
+                            <label class="mil-text-sm mil-mb10" for="beta-name">Full Name</label>
+                            <input id="beta-name" name="name" type="text" class="mil-input" placeholder="e.g., Salma El Idrissi" required>
+                        </div>
+                    </div>
+                    <div class="mil-form-row">
+                        <div class="mil-form-field">
+                            <label class="mil-text-sm mil-mb10" for="beta-email">Email</label>
+                            <input id="beta-email" name="email" type="email" class="mil-input" placeholder="you@example.com" required>
+                        </div>
+                    </div>
+                    <div class="mil-form-row mil-mb20">
+                        <div class="mil-form-field">
+                        
+                                <span>I understand I’ll be added as a tester and will receive the download link by email.</span>
+                            
+                        </div>
+                    </div>
+                    <div class="mil-form-row">
+                        <button type="submit" class="mil-btn mil-a2" id="beta-submit">Join Android Beta</button>
+                    </div>
+                    <p class="mil-text-sm mil-mt15 mil-hidden" id="beta-status"></p>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Android Beta Modal end -->
 
     <!-- swup js -->
     <script src="js/plugins/swup.min.js?v=20250923"></script>
@@ -557,8 +598,8 @@ reviews end -->
     <!-- parallax js -->
     <script src="js/plugins/parallax.js"></script>
 
-    <!-- pixy js -->
-    <script src="js/main.js?v=20250923"></script>
+    <!-- pixy js (cache-busted) -->
+    <script src="js/main.js?v=20250923-2"></script>
 
 </body>
 

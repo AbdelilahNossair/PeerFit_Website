@@ -108,6 +108,35 @@ body {
   height: 100vh;
 }
 
+/* In simple-scroll mode, let the page scroll naturally */
+html.mil-simple-scroll .mil-page-wrapper {
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 100vh;
+}
+
+/* Also ensure body and html can scroll in simple mode */
+html.mil-simple-scroll {
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  height: auto !important;
+}
+
+html.mil-simple-scroll body {
+  overflow: visible !important;
+  height: auto !important;
+}
+
+/* Ensure content can expand naturally */
+html.mil-simple-scroll #smooth-content {
+  height: auto !important;
+  min-height: 100vh;
+}
+
+html.mil-simple-scroll #smooth-wrapper {
+  height: auto !important;
+}
+
 .mil-up {
   opacity: 0;
   -webkit-transform: translateY(40px) scale(1.04);
@@ -479,7 +508,7 @@ a {
   color: #37CC8D;
 }
 .mil-arrow-link.mil-a2:after {
-  olor: #37CC8D;
+  color: #37CC8D;
 }
 .mil-arrow-link:hover:after {
   -webkit-transform: translateX(5px);
@@ -2505,7 +2534,7 @@ top panel
   position: fixed;
   z-index: 9999999;
   top: 0;
-  lfeft: 0;
+  left: 0;
   width: 100%;
   display: -webkit-box;
   display: -ms-flexbox;
@@ -2679,7 +2708,7 @@ top panel
   width: 100%;
   z-index: 9999999;
   top: 0;
-  lfeft: 0;
+  left: 0;
   width: 100%;
   height: 160px;
   display: -webkit-box;
