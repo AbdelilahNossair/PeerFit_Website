@@ -14,6 +14,15 @@
   -webkit-mask-position: center;
     mask-position: center;
 }
+/* icon size for iconboxes */
+.mil-icon-ib {
+  font-size: 48px;
+  line-height: 1;
+  color: #D2D2D0;
+}
+@media (max-width: 768px) {
+  .mil-icon-ib { font-size: 40px; }
+}
 /* hero CTA button spacing */
 .mil-hero-5 .mil-hero-text .mil-mb40 .mil-btn + .mil-btn {
   margin-left: 14px;
