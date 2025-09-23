@@ -22,7 +22,7 @@
         var ease = function (t) { return 1 - Math.cos((t * Math.PI) / 2); }; // easeOutSine
         duration = Math.max(0.2, Math.min(duration || 0.8, 1.5)); // Longer max duration for Safari
         
-        console.log('Safari Debug: rAF scroll', { startY, targetY, changeY, duration });
+        
         
         function step(ts) {
             if (!startTime) startTime = ts;
@@ -39,7 +39,7 @@
             if (progress < 1) {
                 requestAnimationFrame(step);
             } else {
-                console.log('Safari Debug: rAF scroll completed');
+                
             }
         }
         requestAnimationFrame(step);
@@ -71,7 +71,7 @@
                 }
             } catch (e) {
                 // Fail silently; we'll fall back to ScrollTo/instant
-                console.warn('ScrollSmoother init failed:', e);
+                
             }
         }
         return window.__peerfitSmoother || null;
@@ -89,13 +89,7 @@
         var targetY = targetEl.getBoundingClientRect().top + window.pageYOffset - offsetY;
 
         // Debug logging for Safari/Chrome
-        console.log('Scroll Debug: smoothScrollTo called', {
-            element: targetEl.id || targetEl.className,
-            offsetY: offsetY,
-            targetY: targetY,
-            hasSmoother: !!(window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get())),
-            hasGSAP: !!(window.gsap && gsap.to)
-        });
+        
 
         var startY = window.pageYOffset || 0;
         var smoother = window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get());
@@ -106,9 +100,9 @@
             try {
                 smoother.scrollTo(targetY, true);
                 attempted = true;
-                console.log('Scroll Debug: ScrollSmoother used');
+                
             } catch (e) {
-                console.log('Scroll Debug: ScrollSmoother failed', e);
+                
             }
         }
 
@@ -123,9 +117,9 @@
                     scrollTo: { y: targetY },
                 });
                 attempted = true;
-                console.log('Scroll Debug: GSAP ScrollTo used');
+                
             } catch (e) {
-                console.log('Scroll Debug: GSAP ScrollTo failed', e);
+                
             }
         }
 
@@ -139,7 +133,7 @@
         }
         // If nothing attempted, go straight to rAF
         if (!attempted) {
-            console.log('Scroll Debug: Using rAF fallback');
+            
             rafSmoothScrollToY(targetY, 0.8);
         } else {
             // Verify after animation starts; fix if needed (covers edge cases with smoothers)
@@ -171,7 +165,7 @@
                 if (!targetId) return;
                 var el = document.querySelector(targetId);
                 if (!el) return;
-                console.log('Safari Debug: Anchor click handler', { href: targetId, element: el.id || el.className });
+                
                 // fully take over this click to avoid Swup or other handlers
                 e.preventDefault();
                 e.stopPropagation();
@@ -709,7 +703,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (href.startsWith('#') && href.length > 1 && href !== '#.') {
             const el = document.querySelector(href);
             if (!el) return;
-            console.log('Safari Debug: Global click handler triggered for', href);
+            
             e.preventDefault();
             e.stopPropagation();
             if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
@@ -721,7 +715,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 var header = document.querySelector('.mil-top-panel-2');
                 var h = header ? (header.offsetHeight || 0) : 0;
                 var oy = (h || (window.innerWidth < 992 ? 90 : 120)) + 24;
-                console.log('Safari Debug: Using absolute fallback scroll');
+                
                 window.scrollTo(0, el.getBoundingClientRect().top + window.pageYOffset - oy);
             }
         }
@@ -1103,24 +1097,50 @@ document.addEventListener("DOMContentLoaded", function () {
                 e.preventDefault();
                 var nameEl = form.querySelector('#beta-name');
                 var emailEl = form.querySelector('#beta-email');
-                var consentEl = form.querySelector('#beta-consent');
+                var hpEl = form.querySelector('#beta-hp');
                 var name = (nameEl ? nameEl.value : '').trim();
                 var email = (emailEl ? emailEl.value : '').trim();
-                var consent = !!(consentEl && consentEl.checked);
-                if (!name || !email || !consent) {
-                    if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Please fill out all fields and accept the consent.'; }
+                var honeypot = (hpEl ? hpEl.value : '').trim();
+                if (!name || !email) {
+                    if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Please enter your name and email.'; }
                     return;
                 }
                 var submitBtn = form.querySelector('#beta-submit');
                 if (submitBtn) submitBtn.disabled = true;
                 if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Submitting…'; }
-                // Simulate async send. Replace with your endpoint later.
-                setTimeout(function(){
-                    if (statusEl) { statusEl.textContent = 'Thanks! You\'ll receive an email with the download link shortly.'; }
-                    setTimeout(closeModal, 900);
-                    form.reset();
+
+                var payload = {
+                    name: name,
+                    email: email,
+                    interest: 'Android Beta',
+                    availability: '',
+                    message: 'Android Beta access request from ' + name + ' <' + email + '>.',
+                    honeypot: honeypot
+                };
+
+                fetch('/api/contact', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(function(resp){
+                    return resp.json().catch(function(){ return { ok: false, error: 'Invalid server response' }; });
+                }).then(function(data){
+                    if (data && data.ok) {
+                        if (statusEl) { statusEl.textContent = 'Thanks! We\'ll email you the download link shortly.'; }
+                        setTimeout(function(){
+                            closeModal();
+                            form.reset();
+                            if (submitBtn) submitBtn.disabled = false;
+                        }, 900);
+                    } else {
+                        var err = (data && (data.error || data.message)) || 'Something went wrong. Please try again later.';
+                        if (statusEl) { statusEl.textContent = err; }
+                        if (submitBtn) submitBtn.disabled = false;
+                    }
+                }).catch(function(err){
+                    if (statusEl) { statusEl.textContent = 'Network error. Please try again later.'; }
                     if (submitBtn) submitBtn.disabled = false;
-                }, 900);
+                });
             });
         }
 
@@ -1141,6 +1161,126 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     setupAndroidModalHandlers();
+
+    /* -------------------------------------------
+
+    Contact modal
+
+    ------------------------------------------- */
+    function setupContactModalHandlers() {
+        if (window.__peerfitContactModalHandlersBound) return;
+        window.__peerfitContactModalHandlersBound = true;
+
+        var modal = document.getElementById('contact-modal');
+        if (!modal) return;
+
+        modal.classList.remove('mil-active');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.setAttribute('hidden', '');
+
+        var openers = document.querySelectorAll('.mil-open-contact-modal');
+        var closeBtn = modal.querySelector('.mil-modal-close');
+        var backdrop = modal.querySelector('.mil-modal-backdrop');
+        var form = modal.querySelector('#contact-form');
+        var statusEl = modal.querySelector('#contact-status');
+        var appRoot = document.getElementById('swup') || document.getElementById('smooth-wrapper') || document.body;
+
+        function openModal(e) {
+            if (e) { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+            modal.classList.add('mil-active');
+            modal.setAttribute('aria-hidden', 'false');
+            modal.removeAttribute('hidden');
+            document.body.classList.add('mil-modal-open');
+            try { if (appRoot && appRoot !== modal && appRoot.setAttribute) appRoot.setAttribute('inert', ''); } catch (err) {}
+            try { var smoother = window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get()); if (smoother && smoother.paused) smoother.paused(true); } catch (err) {}
+            var nameInput = modal.querySelector('#contact-name'); if (nameInput) nameInput.focus();
+        }
+        function closeModal() {
+            try { var active = document.activeElement; if (active && modal.contains(active)) active.blur(); } catch (err) {}
+            modal.classList.remove('mil-active');
+            modal.setAttribute('aria-hidden', 'true');
+            modal.setAttribute('hidden', '');
+            document.body.classList.remove('mil-modal-open');
+            try { if (appRoot && appRoot !== modal && appRoot.removeAttribute) appRoot.removeAttribute('inert'); } catch (err) {}
+            try { var smoother = window.__peerfitSmoother || (window.ScrollSmoother && ScrollSmoother.get && ScrollSmoother.get()); if (smoother && smoother.paused) smoother.paused(false); } catch (err) {}
+        }
+
+        openers.forEach(function(btn){ btn.addEventListener('click', openModal); });
+        if (closeBtn) closeBtn.addEventListener('click', closeModal);
+        if (backdrop) backdrop.addEventListener('click', closeModal);
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                var nameEl = form.querySelector('#contact-name');
+                var emailEl = form.querySelector('#contact-email');
+                var msgEl = form.querySelector('#contact-message');
+                var hpEl = form.querySelector('#contact-hp');
+                var name = (nameEl ? nameEl.value : '').trim();
+                var email = (emailEl ? emailEl.value : '').trim();
+                var message = (msgEl ? msgEl.value : '').trim();
+                var honeypot = (hpEl ? hpEl.value : '').trim();
+                if (!name || !email || !message) {
+                    if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Please complete all fields.'; }
+                    return;
+                }
+                var submitBtn = form.querySelector('#contact-submit');
+                if (submitBtn) submitBtn.disabled = true;
+                if (statusEl) { statusEl.classList.remove('mil-hidden'); statusEl.textContent = 'Sending…'; }
+
+                var payload = {
+                    name: name,
+                    email: email,
+                    interest: 'Contact',
+                    availability: '',
+                    message: message,
+                    honeypot: honeypot
+                };
+
+                fetch('/api/contact', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).then(function(resp){
+                    return resp.json().catch(function(){ return { ok: false, error: 'Invalid server response' }; });
+                }).then(function(data){
+                    if (data && data.ok) {
+                        if (statusEl) { statusEl.textContent = 'Thanks! We\'ll get back to you soon.'; }
+                        setTimeout(function(){
+                            closeModal();
+                            form.reset();
+                            if (submitBtn) submitBtn.disabled = false;
+                        }, 900);
+                    } else {
+                        var err = (data && (data.error || data.message)) || 'Something went wrong. Please try again later.';
+                        if (statusEl) { statusEl.textContent = err; }
+                        if (submitBtn) submitBtn.disabled = false;
+                    }
+                }).catch(function(err){
+                    if (statusEl) { statusEl.textContent = 'Network error. Please try again later.'; }
+                    if (submitBtn) submitBtn.disabled = false;
+                });
+            });
+        }
+
+        // Capture-phase delegation to guarantee open
+        document.addEventListener('click', function(evt){
+            var el = evt.target;
+            while (el && el !== document) {
+                if (el.classList && el.classList.contains('mil-open-contact-modal')) {
+                    evt.preventDefault();
+                    if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
+                    evt.stopPropagation();
+                    openModal(evt);
+                    return;
+                }
+                el = el.parentNode;
+            }
+        }, true);
+    }
+
+    setupContactModalHandlers();
 
     /* ----------------------------------------------------------------------------
     -------------------------------------------------------------------------------
