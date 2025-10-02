@@ -106,6 +106,8 @@
 
 /* Scroll lock when modal open */
 body.mil-modal-open { overflow: hidden; touch-action: none; overscroll-behavior: contain; }
+/* Root CSS variables */
+:root { --nav-height: 90px; }
 
 /* Mobile adjustments */
 @media (max-width: 576px) {
@@ -2522,6 +2524,27 @@ hero 5
   .mil-hero-5 .mil-hero-main .mil-hero-text {
     padding: 120px 0;
   }
+}
+
+/* Short viewport (limited vertical height) adjustments to prevent overlap with fixed navbar */
+@media (max-height: 820px) and (min-width: 769px) {
+  .mil-hero-5 { height: auto; min-height: 100svh; }
+  .mil-hero-5 .mil-hero-main { height: auto; min-height: 100svh; align-items: flex-start; padding-top: calc(var(--nav-height, 80px) + 20px); }
+  .mil-hero-5 .mil-hero-main .mil-hero-text { padding-bottom: 60px; padding-top: 10px; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text .mil-scale-img { margin-top: 0; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text h1 { font-size: clamp(2.3rem, 6vw, 4rem); line-height: 1.05; margin-bottom: 28px; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text .mil-stylized { margin-bottom: 40px; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text p.mil-text-lg { margin-bottom: 32px; }
+}
+
+/* Extremely short viewport (e.g., landscape phones, small laptop with devtools) */
+@media (max-height: 640px) {
+  .mil-hero-5 { height: auto; }
+  .mil-hero-5 .mil-hero-main { height: auto; align-items: flex-start; padding-top: calc(var(--nav-height, 70px) + 12px); }
+  .mil-hero-5 .mil-hero-main .mil-hero-text { padding-bottom: 40px; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text h1 { font-size: clamp(2rem, 5.2vw, 3rem); margin-bottom: 20px; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text p.mil-text-lg { font-size: 0.95rem; line-height: 1.35; }
+  .mil-hero-5 .mil-hero-main .mil-hero-text .mil-mb40 { margin-bottom: 28px !important; }
 }
 
 /* Add space above hero icon/text on large screens */
